@@ -76,7 +76,7 @@ public class PregenerateActivity extends Activity {
 
         TextView title = text(28, Color.WHITE);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setText("Pré-gerar mundo");
+        title.setText("Pre-generate world");
         status = text(17, 0xFFF7F7F8);
         detail = text(14, 0xFF9A9CA3);
         bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
@@ -102,29 +102,29 @@ public class PregenerateActivity extends Activity {
             autoWorld = new File(getIntent().getStringExtra(WORLD_EXTRA));
             sizes.setVisibility(android.view.View.GONE);
             Button skip = new Button(this);
-            skip.setText("Pular e jogar");
+            skip.setText("Skip and play");
             skip.setOnClickListener(v -> skip());
             root.addView(skip);
-            title.setText("Preparando o mundo novo");
-            detail.setText("Gerando 1 × 1 km em volta do personagem: explorar essa área depois fica bem mais leve. "
-                + "Leva alguns minutos. " + chargingHint());
+            title.setText("Preparing the new world");
+            detail.setText("Generating 1 × 1 km around your character, so exploring that area later is much lighter. "
+                + "It takes a few minutes. " + chargingHint());
             start(512, autoWorld);
             return;
         }
 
         if (HytaleActivity.isRunning()) {
-            status.setText("Feche o jogo antes: o mundo não pode estar aberto em dois lugares.");
+            status.setText("Close the game first: the world cannot be open in two places.");
             sizes.setEnabled(false);
             sizes.setVisibility(android.view.View.GONE);
             return;
         }
         File world = latestWorld();
         if (world == null) {
-            status.setText("Nenhum mundo encontrado. Entre num mundo pelo jogo uma vez antes.");
+            status.setText("No world found. Enter a world from the game once first.");
             sizes.setVisibility(android.view.View.GONE);
             return;
         }
-        status.setText("Mundo \"" + world.getName() + "\". Escolha o tamanho da área em volta do seu personagem.");
+        status.setText("World \"" + world.getName() + "\". Choose the size of the area around your character.");
         detail.setText(chargingHint());
     }
 
@@ -140,8 +140,8 @@ public class PregenerateActivity extends Activity {
         Intent battery = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         int plugged = battery != null ? battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) : 0;
         return plugged != 0
-            ? "Carregando. Pode deixar a tela ligada e o celular parado até terminar."
-            : "Dica: deixe o celular carregando; gerar terreno usa bastante CPU e leva vários minutos.";
+            ? "Charging. Leave the screen on and the phone still until it finishes."
+            : "Tip: keep the phone charging; generating terrain uses a lot of CPU and takes several minutes.";
     }
 
     private File files() {
@@ -176,12 +176,12 @@ public class PregenerateActivity extends Activity {
         try {
             double[] at = playerPosition(new File(world, "universe/players"));
             setRegion(at[0] - radius, at[1] - radius, at[0] + radius, at[1] + radius);
-            status.setText(String.format("Gerando %d × %d m em volta de (%.0f, %.0f)…", radius * 2, radius * 2,
+            status.setText(String.format("Generating %d × %d m around (%.0f, %.0f)…", radius * 2, radius * 2,
                 at[0], at[1]));
             launchServer(world);
         } catch (Exception e) {
             Log.e(TAG, "could not start", e);
-            status.setText("Não deu para começar: " + e.getMessage());
+            status.setText("Could not start: " + e.getMessage());
             removeRegion();
         }
     }
@@ -300,7 +300,7 @@ public class PregenerateActivity extends Activity {
     private void showProgress() {
         if (total > 0) {
             bar.setProgress((int) (1000L * done / total));
-            detail.setText(done + " de " + total + " chunks");
+            detail.setText(done + " of " + total + " chunks");
         }
     }
 
@@ -312,7 +312,7 @@ public class PregenerateActivity extends Activity {
         long quiet = System.currentTimeMillis() - lastProgressAt;
         if (total > 0 && (done >= total || (done >= total - 100 && quiet > 20000))) {
             stopping = true;
-            status.setText("Terminando e salvando…");
+            status.setText("Finishing and saving…");
             server.destroy(); // SIGTERM: the server shuts down normally and saves
             ui.postDelayed(() -> { if (server != null && server.isAlive()) server.destroyForcibly(); }, 90000);
             return;
@@ -333,10 +333,10 @@ public class PregenerateActivity extends Activity {
         if (stopping) {
             mark(worldConfig.getParentFile().getParentFile().getParentFile().getParentFile());
             bar.setProgress(1000);
-            status.setText("Pronto! A área está gerada. Pode abrir o jogo.");
-            detail.setText(total + " chunks gerados.");
+            status.setText("Done! The area is generated. You can open the game.");
+            detail.setText(total + " chunks generated.");
         } else {
-            status.setText("O servidor parou antes de terminar (código " + exit + ").");
+            status.setText("The server stopped before finishing (code " + exit + ").");
             detail.setText(lastLines);
         }
     }
@@ -345,7 +345,7 @@ public class PregenerateActivity extends Activity {
     private void skip() {
         skipped = true;
         if (server != null && server.isAlive()) {
-            status.setText("Salvando o que já foi gerado…");
+            status.setText("Saving what was generated so far…");
             server.destroy(); // finished() opens the game once it has saved
         } else {
             removeRegion();

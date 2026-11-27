@@ -37,7 +37,7 @@ public class SetupActivity extends Activity {
         status.setTextSize(16);
         status.setGravity(Gravity.CENTER);
         status.setPadding(48, 32, 48, 0);
-        status.setText("Preparando o jogo…");
+        status.setText("Preparing the game…");
         layout.addView(status);
         setContentView(layout);
         hideSystemBars();
@@ -46,7 +46,7 @@ public class SetupActivity extends Activity {
         ServerSetup setup = new ServerSetup(this, message -> runOnUiThread(() -> status.setText(message)), gameDir);
         if (!setup.client().isFile()) {
             spinner.setVisibility(ProgressBar.GONE);
-            status.setText("O Hytale ainda não está instalado.\nAbra o launcher e toque em Instalar.");
+            status.setText("Hytale is not installed yet.\nOpen the launcher and tap Install.");
             return;
         }
         Thread worker = new Thread(() -> {
@@ -64,7 +64,7 @@ public class SetupActivity extends Activity {
                 Log.e("HytaleSetup", "setup failed", e);
                 runOnUiThread(() -> {
                     spinner.setVisibility(ProgressBar.GONE);
-                    status.setText("Não foi possível preparar o servidor do jogo:\n" + e.getMessage());
+                    status.setText("Could not prepare the game's world server:\n" + e.getMessage());
                 });
             }
         }, "HytaleSetup");

@@ -54,6 +54,7 @@ public class HytaleActivity extends SDLActivity {
         batterySaver = GameSettings.batterySaver(this);
         setEnv("HYPRISM_TEXTURE_HALF", GameSettings.halfTextures(this) ? "1" : null);
         setEnv("HYPRISM_SWAP_INTERVAL", null);
+        sizeServerForMemory();
         super.onCreate(savedInstanceState);
         running = true;
         clearLeftoverPregeneration();
@@ -76,6 +77,32 @@ public class HytaleActivity extends SDLActivity {
         addContentView(settingsPanel, new ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         gamepad.setOnOpenSettings(settingsPanel::show);
+    }
+
+    /**
+     * Gives the local world server more room on phones with more memory, for worlds with many mods: the
+     * heap ceiling (the wrapper's default is 1536M) and the JIT code cache, which a large mod set can
+     * fill, after which the server's new code stops being compiled. The heap still starts at 512M and
+     * only grows when the server needs it. env.txt, read later by the loader, wins over these values.
+     */
+    private void sizeServerForMemory() {
+        android.app.ActivityManager.MemoryInfo memory = new android.app.ActivityManager.MemoryInfo();
+        android.app.ActivityManager manager = getSystemService(android.app.ActivityManager.class);
+        if (manager != null)
+            manager.getMemoryInfo(memory);
+        long gib = 1L << 30;
+        String heap = null, opts = null;
+        if (memory.totalMem >= 10 * gib) {
+            heap = "3072M";
+            opts = "-XX:ReservedCodeCacheSize=192m";
+        } else if (memory.totalMem >= 7 * gib) {
+            heap = "2048M";
+            opts = "-XX:ReservedCodeCacheSize=128m";
+        }
+        setEnv("HYPRISM_SERVER_HEAP", heap);
+        setEnv("HYPRISM_SERVER_OPTS", opts);
+        Log.i("HytaleHost", "phone memory " + memory.totalMem / (1 << 20) + " MB, world server heap up to "
+            + (heap != null ? heap : "the default"));
     }
 
     /**
@@ -118,22 +145,12 @@ public class HytaleActivity extends SDLActivity {
         }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        // A steady 60 Hz beats a 120 Hz panel that drops to 45 under load. HYPRISM_REFRESH=0 leaves it to the system.
-        float hz = 60f;
-        try {
-            String value = envValue("HYPRISM_REFRESH");
-            if (value != null)
-                hz = Float.parseFloat(value.trim());
-        } catch (NumberFormatException e) {
-            Log.w("HytaleHost", "ignoring a bad HYPRISM_REFRESH: " + e.getMessage());
-        }
+        // The refresh rate comes from the in-game panel (60 Hz by default: a steady 60 beat a 120 Hz panel
+        // that dropped to 45 under load on the S23). Battery mode picks its own lower rate.
         if (batterySaver)
             applyBatterySaver();
-        else if (hz > 0) {
-            WindowManager.LayoutParams attributes = getWindow().getAttributes();
-            attributes.preferredRefreshRate = hz;
-            getWindow().setAttributes(attributes);
-        }
+        else
+            applyRefreshRate();
 
         PowerManager power = getSystemService(PowerManager.class);
         if (power == null)
@@ -147,6 +164,47 @@ public class HytaleActivity extends SDLActivity {
                 Toast.makeText(this, "The phone is hot and slowing down. Let it cool for a moment.",
                     Toast.LENGTH_SHORT).show();
         });
+    }
+
+    /**
+     * Asks the display for the panel's refresh rate (GameSettings.refreshRate); VSync then paces the game
+     * at it. HYPRISM_REFRESH in env.txt wins over the panel, and 0 leaves the rate to the system. Applies
+     * at once, so the panel calls it when the option changes. Does nothing in battery mode.
+     */
+    void applyRefreshRate() {
+        if (batterySaver)
+            return;
+        int hz = GameSettings.refreshRate(this);
+        String value = envValue("HYPRISM_REFRESH");
+        if (value != null) {
+            try {
+                hz = Math.round(Float.parseFloat(value.trim()));
+            } catch (NumberFormatException e) {
+                Log.w("HytaleHost", "ignoring a bad HYPRISM_REFRESH: " + e.getMessage());
+            }
+        }
+        android.view.Display.Mode mode = hz > 0 ? modeNear(this, hz) : null;
+        WindowManager.LayoutParams attributes = getWindow().getAttributes();
+        attributes.preferredDisplayModeId = mode != null ? mode.getModeId() : 0;
+        attributes.preferredRefreshRate = mode != null ? mode.getRefreshRate() : (hz > 0 ? hz : 0);
+        getWindow().setAttributes(attributes);
+        Log.i("HytaleHost", "refresh rate: asked for " + hz + " Hz, display mode "
+            + (mode != null ? mode.getRefreshRate() + " Hz" : "left to the system"));
+    }
+
+    /** The display mode at the current resolution closest to hz, within 8 Hz (a 96 Hz mode serves 90), or null. */
+    static android.view.Display.Mode modeNear(android.app.Activity activity, int hz) {
+        android.view.Display display = activity.getWindowManager().getDefaultDisplay();
+        android.view.Display.Mode current = display.getMode();
+        android.view.Display.Mode best = null;
+        for (android.view.Display.Mode mode : display.getSupportedModes()) {
+            if (mode.getPhysicalWidth() != current.getPhysicalWidth() || mode.getPhysicalHeight() != current.getPhysicalHeight())
+                continue;
+            float gap = Math.abs(mode.getRefreshRate() - hz);
+            if (gap <= 8 && (best == null || gap < Math.abs(best.getRefreshRate() - hz)))
+                best = mode;
+        }
+        return best;
     }
 
     /**

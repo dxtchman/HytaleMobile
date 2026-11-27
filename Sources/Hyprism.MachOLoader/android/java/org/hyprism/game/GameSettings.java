@@ -9,11 +9,14 @@ import android.content.SharedPreferences;
 /**
  * The phone options of the game, kept in the game's own process and changed from the in-game panel
  * (GameSettingsPanel). Resolution, battery mode and lighter textures are read when the game starts,
- * so changing them asks for a restart; the control size and the pre-generation apply at once.
+ * so changing them asks for a restart; the refresh rate, control size and pre-generation apply at once.
  */
 final class GameSettings {
     /** The 3D view heights the panel offers; 0 keeps the game's own render scale. */
-    static final int[] RESOLUTIONS = { 0, 540, 480, 360, 240 };
+    static final int[] RESOLUTIONS = { 0, 720, 540, 480, 360, 240 };
+
+    /** The refresh rates the panel offers when the display has a mode near them; 0 leaves it to the system. */
+    static final int[] REFRESH_RATES = { 60, 90, 120 };
 
     private static int startedHeight = -1;
     private static boolean startedBattery, startedHalf;
@@ -27,6 +30,11 @@ final class GameSettings {
 
     static int renderHeight(Context c) {
         return prefs(c).getInt("renderHeight", 0);
+    }
+
+    /** The display refresh rate the game asks for, in Hz (VSync paces the game at it); 0: the system's choice. */
+    static int refreshRate(Context c) {
+        return prefs(c).getInt("refreshRate", 60);
     }
 
     static boolean batterySaver(Context c) {
@@ -53,6 +61,10 @@ final class GameSettings {
 
     static void setRenderHeight(Context c, int height) {
         prefs(c).edit().putInt("renderHeight", height).apply();
+    }
+
+    static void setRefreshRate(Context c, int hz) {
+        prefs(c).edit().putInt("refreshRate", hz).apply();
     }
 
     static void setBatterySaver(Context c, boolean on) {

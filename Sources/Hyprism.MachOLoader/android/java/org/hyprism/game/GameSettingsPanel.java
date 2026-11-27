@@ -32,6 +32,9 @@ final class GameSettingsPanel extends FrameLayout {
     private final TextView restartNote;
     private final Button restartButton;
     private final TextView[] chips = new TextView[GameSettings.RESOLUTIONS.length];
+    private final TextView[] rateChips = new TextView[GameSettings.REFRESH_RATES.length + 1];
+    private final int[] rateValues = new int[GameSettings.REFRESH_RATES.length + 1];
+    private int rateCount;
 
     GameSettingsPanel(HytaleActivity activity, GamepadOverlay pad) {
         super(activity);
@@ -59,9 +62,9 @@ final class GameSettingsPanel extends FrameLayout {
         LinearLayout header = new LinearLayout(activity);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = text("Configurações do celular", 20, TEXT, true);
+        TextView title = text("Phone settings", 20, TEXT, true);
         header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        Button close = button("Fechar", false);
+        Button close = button("Close", false);
         close.setOnClickListener(v -> hide());
         header.addView(close);
         card.addView(header);
@@ -71,7 +74,7 @@ final class GameSettingsPanel extends FrameLayout {
         chipRow.setOrientation(LinearLayout.HORIZONTAL);
         for (int i = 0; i < chips.length; i++) {
             int height = GameSettings.RESOLUTIONS[i];
-            TextView chip = text(height == 0 ? "Jogo" : height + "p", 14, TEXT, true);
+            TextView chip = text(height == 0 ? "Game" : height + "p", 14, TEXT, true);
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(dp(10), dp(8), dp(10), dp(8));
             chip.setOnClickListener(v -> {
@@ -84,30 +87,45 @@ final class GameSettingsPanel extends FrameLayout {
             chipRow.addView(chip, cp);
             chips[i] = chip;
         }
-        row("Resolução do 3D",
-            "Desenha o mundo nessa altura e estica para a tela; a interface continua nítida. Menor é mais leve, bom para celulares fracos. \"Jogo\" usa a escala do próprio jogo.",
+        row("3D resolution",
+            "Draws the world at this height and stretches it to the screen; the interface stays sharp. Lower is lighter. \"Game\" uses the game's own render scale.",
             chipRow, true);
 
-        row("Modo bateria",
-            "Joga a uns 45 FPS (30 se a tela não tiver esse modo) em vez de 60: esquenta e gasta menos bateria.",
+        // Refresh rate: only the rates the display has a mode for, plus the system's own choice.
+        LinearLayout rateRow = new LinearLayout(activity);
+        rateRow.setOrientation(LinearLayout.HORIZONTAL);
+        for (int target : GameSettings.REFRESH_RATES) {
+            android.view.Display.Mode mode = HytaleActivity.modeNear(activity, target);
+            if (mode != null)
+                addRateChip(rateRow, target, Math.round(mode.getRefreshRate()) + " Hz");
+        }
+        addRateChip(rateRow, 0, "System");
+        row("Refresh rate",
+            rateCount > 2
+                ? "The game runs at the screen's rate. Higher is smoother but heats the phone and uses more battery; lower the 3D resolution if it cannot keep up. Battery mode overrides this."
+                : "This screen only offers 60 Hz right now. On Samsung phones, set Settings > Display > Motion smoothness to Adaptive for higher rates.",
+            rateRow, true);
+
+        row("Battery mode",
+            "Plays at about 45 FPS (30 if the screen has no such mode) instead of the refresh rate above: runs cooler and uses less battery.",
             toggle(GameSettings.batterySaver(activity), on -> {
                 GameSettings.setBatterySaver(activity, on);
                 refreshRestart();
             }), false);
 
-        row("Texturas mais leves",
-            "Carrega as texturas grandes pela metade: menos memória de vídeo, um pouco menos nítido de perto.",
+        row("Lighter textures",
+            "Loads large textures at half size: less video memory, slightly less sharp up close. Helps on servers with many mod textures.",
             toggle(GameSettings.halfTextures(activity), on -> {
                 GameSettings.setHalfTextures(activity, on);
                 refreshRestart();
             }), false);
 
-        row("Pré-gerar mundos novos",
-            "Antes de jogar um mundo novo, gera 1 km em volta de você para explorar depois ficar mais leve. Leva alguns minutos e dá para pular.",
+        row("Pre-generate new worlds",
+            "Before you play a new world, generates 1 km around you so exploring later is lighter. Takes a few minutes and can be skipped.",
             toggle(GameSettings.pregenerate(activity), on -> GameSettings.setPregenerate(activity, on)), false);
 
-        row("Tocar na tela (estilo Bedrock)",
-            "A mira fica no centro da tela. Tocar em qualquer lugar usa ou coloca o item na mira; segurar quebra ou bate; arrastar mexe a câmera. O botão de bater e quebrar some, o de defender continua. O analógico fica no canto inferior esquerdo.",
+        row("Tap to act (Bedrock style)",
+            "The crosshair stays in the middle. Tap anywhere to use or place at the crosshair; hold to break or attack; drag to move the camera. The attack button is hidden, the block button stays. The stick sits in the lower left corner.",
             toggle(GameSettings.touchAim(activity), on -> {
                 GameSettings.setTouchAim(activity, on);
                 pad.reloadSettings();
@@ -126,9 +144,9 @@ final class GameSettingsPanel extends FrameLayout {
             @Override public void onStartTrackingTouch(SeekBar bar) { }
             @Override public void onStopTrackingTouch(SeekBar bar) { }
         });
-        row("Tamanho dos controles", "Aumenta ou diminui todos os botões da tela de uma vez.", size, true);
+        row("Control size", "Makes every on-screen button bigger or smaller at once.", size, true);
 
-        Button edit = button("Posição e opacidade dos controles…", true);
+        Button edit = button("Control position and opacity…", true);
         edit.setOnClickListener(v -> {
             hide();
             pad.startEditor();
@@ -138,19 +156,21 @@ final class GameSettingsPanel extends FrameLayout {
         ep.topMargin = dp(14);
         card.addView(edit, ep);
 
-        restartNote = text("Resolução, modo bateria e texturas valem depois de reiniciar o jogo.", 13, ACCENT, false);
+        restartNote = text("Resolution, battery mode and textures apply after restarting the game.", 13, ACCENT, false);
         restartNote.setPadding(0, dp(14), 0, dp(6));
         card.addView(restartNote);
-        restartButton = button("Reiniciar o jogo agora", true);
+        restartButton = button("Restart the game now", true);
         restartButton.setOnClickListener(v -> activity.restartGame());
         card.addView(restartButton, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT));
         paintChips();
+        paintRateChips();
         refreshRestart();
     }
 
     void show() {
         paintChips();
+        paintRateChips();
         refreshRestart();
         pad.panelOpened();
         setVisibility(VISIBLE);
@@ -168,10 +188,36 @@ final class GameSettingsPanel extends FrameLayout {
     private void refreshRestart() {
         boolean needed = GameSettings.restartNeeded(activity);
         restartNote.setText(needed
-            ? "Mudou algo que só vale depois de reiniciar o jogo."
-            : "Resolução, modo bateria e texturas valem depois de reiniciar o jogo.");
+            ? "You changed something that applies after restarting the game."
+            : "Resolution, battery mode and textures apply after restarting the game.");
         restartNote.setTextColor(needed ? ACCENT : HINT);
         restartButton.setVisibility(needed ? VISIBLE : GONE);
+    }
+
+    private void addRateChip(LinearLayout rowView, int hz, String label) {
+        int index = rateCount++;
+        TextView chip = text(label, 14, TEXT, true);
+        chip.setGravity(Gravity.CENTER);
+        chip.setPadding(dp(10), dp(8), dp(10), dp(8));
+        chip.setOnClickListener(v -> {
+            GameSettings.setRefreshRate(activity, hz);
+            activity.applyRefreshRate();
+            paintRateChips();
+        });
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        cp.leftMargin = index == 0 ? 0 : dp(6);
+        rowView.addView(chip, cp);
+        rateChips[index] = chip;
+        rateValues[index] = hz;
+    }
+
+    private void paintRateChips() {
+        int selected = GameSettings.refreshRate(activity);
+        for (int i = 0; i < rateCount; i++) {
+            boolean on = rateValues[i] == selected;
+            rateChips[i].setBackground(round(on ? ACCENT : CHIP, dp(8)));
+            rateChips[i].setTextColor(on ? 0xFF141409 : TEXT);
+        }
     }
 
     private void paintChips() {
@@ -189,7 +235,7 @@ final class GameSettingsPanel extends FrameLayout {
         void changed(boolean on);
     }
 
-    // A button that reads "Ligado" or "Desligado": the framework Switch is nearly invisible on the dark card.
+    // A button that reads "On" or "Off": the framework Switch is nearly invisible on the dark card.
     private TextView toggle(boolean on, OnChange change) {
         TextView t = text("", 15, TEXT, true);
         t.setGravity(Gravity.CENTER);
@@ -197,7 +243,7 @@ final class GameSettingsPanel extends FrameLayout {
         t.setPadding(dp(18), dp(10), dp(18), dp(10));
         boolean[] state = { on };
         Runnable paint = () -> {
-            t.setText(state[0] ? "Ligado" : "Desligado");
+            t.setText(state[0] ? "On" : "Off");
             t.setTextColor(state[0] ? 0xFF141409 : TEXT);
             t.setBackground(round(state[0] ? ACCENT : CHIP, dp(10)));
         };

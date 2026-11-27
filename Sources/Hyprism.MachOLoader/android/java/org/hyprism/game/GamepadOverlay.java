@@ -811,7 +811,7 @@ public class GamepadOverlay extends View {
 
     // ---- layout editor --------------------------------------------------------------------------
 
-    private static final String[] TOOLS = { "Tamanho −", "Tamanho +", "Opacidade −", "Opacidade +", "Restaurar", "Pronto" };
+    private static final String[] TOOLS = { "Size −", "Size +", "Opacity −", "Opacity +", "Reset", "Done" };
 
     private RectF toolRect(int i) {
         float h = getHeight(), w = getWidth();
@@ -904,7 +904,7 @@ public class GamepadOverlay extends View {
         text.setTextAlign(Paint.Align.CENTER);
         text.setTextSize(h * 0.032f);
         text.setColor(0xFFFFFFFF);
-        canvas.drawText("Arraste os botões. Toque num botão para mudar o tamanho. Opacidade: "
+        canvas.drawText("Drag the buttons. Tap a button to change its size. Opacity: "
             + Math.round(opacity * 100) + "%", getWidth() / 2f, h * 0.40f, text);
         for (int i = 0; i < TOOLS.length; i++) {
             RectF r = toolRect(i);
