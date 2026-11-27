@@ -35,6 +35,9 @@ jobs:
     timeout-minutes: 150
     env:
       LOADER: Sources/Hyprism.MachOLoader
+    defaults:
+      run:
+        shell: bash -eo pipefail {0}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,8 +74,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libarchive-tools zip
-          rustup target add aarch64-linux-android
-          command -v cargo-ndk || cargo install cargo-ndk --locked
+          {
+            rustup target add aarch64-linux-android
+            command -v cargo-ndk || cargo install cargo-ndk --locked
+            rustc --version; cargo --version; cargo ndk --version || true
+          } 2>&1 | tee -a "$RUNNER_TEMP/build.log"
 
       - name: Set up the Android SDK and NDK
         id: sdk
@@ -83,7 +89,7 @@ jobs:
           ndk="${ANDROID_NDK_LATEST_HOME:-$(ls -d "$ANDROID_HOME/ndk/"* | sort -V | tail -1)}"
           echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
           echo "ndk=$(basename "$ndk")" >> "$GITHUB_OUTPUT"
-          echo "Using NDK $ndk"
+          echo "Using NDK $ndk" | tee -a "$RUNNER_TEMP/build.log"
 
       - name: Restore the native dependency cache
         uses: actions/cache@v4
@@ -112,21 +118,33 @@ jobs:
 
       - name: Build SDL, MobileGlues, OpenAL and the loader
         working-directory: ${{ env.LOADER }}
-        run: ./deps.sh && ./build.sh
+        run: |
+          echo "::group::./deps.sh && ./build.sh"
+          { ./deps.sh && ./build.sh; } 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+          echo "::endgroup::"
 
       - name: Build the world server natives
         working-directory: ${{ env.LOADER }}
-        run: server/build-natives.sh
+        run: |
+          echo "::group::server/build-natives.sh"
+          { server/build-natives.sh; } 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+          echo "::endgroup::"
 
       - name: Assemble the world server's Java runtime
         working-directory: ${{ env.LOADER }}
-        run: server/fetch-jdk.sh "${{ steps.jdk25.outputs.path }}"
+        run: |
+          echo "::group::server/fetch-jdk.sh ${{ steps.jdk25.outputs.path }}"
+          { server/fetch-jdk.sh "${{ steps.jdk25.outputs.path }}"; } 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+          echo "::endgroup::"
 
       - name: Assemble the game bundle
         working-directory: ${{ env.LOADER }}
         env:
           JAVA_HOME: ${{ steps.jdk21.outputs.path }}
-        run: android/build-bundle.sh
+        run: |
+          echo "::group::android/build-bundle.sh"
+          { android/build-bundle.sh; } 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+          echo "::endgroup::"
 
       - name: Build the APK
         run: |
@@ -134,7 +152,7 @@ jobs:
             -p:AndroidSdkDirectory="$ANDROID_HOME" \
             -p:JavaSdkDirectory="${{ steps.jdk21.outputs.path }}" \
             -p:ApplicationVersion=$((1000 + ${{ github.run_number }})) \
-            -p:ApplicationDisplayVersion=1.0.${{ github.run_number }}-andy
+            -p:ApplicationDisplayVersion=1.0.${{ github.run_number }}-andy 2>&1 | tee -a "$RUNNER_TEMP/build.log"
           apk=$(find Sources/Hyprism.Android/bin/Release -name '*-Signed.apk' | head -1)
           [ -n "$apk" ] || { echo "::error::no signed APK was produced"; exit 1; }
           mkdir -p dist
@@ -155,3 +173,21 @@ jobs:
           gh release create android-latest dist/*.apk --prerelease --target "$GITHUB_SHA" \
             --title "Android build ${{ github.run_number }} (${GITHUB_REF_NAME})" \
             --notes "Built from ${GITHUB_SHA::7} on ${GITHUB_REF_NAME}. Install the APK on the phone; it updates the installed app when it is signed with the same key."
+
+      - name: Remove an old failure log
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete android-build-log --cleanup-tag --yes || true
+
+      # Actions logs need a signed-in browser; a release's notes can be read through the plain REST API.
+      - name: Publish the failure log
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          touch "$RUNNER_TEMP/build.log"
+          { echo '```text'; grep -v '^\s*$' "$RUNNER_TEMP/build.log" | tail -c 100000; echo '```'; } > "$RUNNER_TEMP/notes.md"
+          gh release delete android-build-log --cleanup-tag --yes || true
+          gh release create android-build-log --prerelease --target "$GITHUB_SHA" \
+            --title "Android build log (failed run ${{ github.run_number }})" --notes-file "$RUNNER_TEMP/notes.md"
