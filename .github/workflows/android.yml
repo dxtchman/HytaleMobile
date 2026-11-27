@@ -7,7 +7,7 @@
 # Signing: the APK is signed with the keystore in the ANDROID_KEYSTORE_B64 secret (a base64 PKCS12 or
 # JKS file with the alias androiddebugkey and the password android, which the project and
 # build-apk.sh expect). Every build must use the same key, or Android refuses to update the app.
-# Without the secret the build makes a throwaway key and warns.
+# Without the secret the build makes a throwaway key and warns. The secret is set on this fork.
 
 name: Android APK
 
