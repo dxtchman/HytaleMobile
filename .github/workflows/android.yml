@@ -1,0 +1,157 @@
+# Copyright (C) 2026 Hyprism Launcher
+# SPDX-License-Identifier: GPL-3.0-only
+
+# Builds the single Android APK (launcher and game host) and publishes it as the "android-latest"
+# prerelease, so it can be downloaded and installed straight from a phone.
+#
+# Signing: the APK is signed with the keystore in the ANDROID_KEYSTORE_B64 secret (a base64 PKCS12 or
+# JKS file with the alias androiddebugkey and the password android, which the project and
+# build-apk.sh expect). Every build must use the same key, or Android refuses to update the app.
+# Without the secret the build makes a throwaway key and warns.
+
+name: Android APK
+
+on:
+  push:
+    paths:
+      - 'Sources/Hyprism.Android/**'
+      - 'Sources/Hyprism.MachOLoader/**'
+      - 'Sources/Hyprism.Core/**'
+      - 'Sources/Hyprism.Desktop/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Android arm64 APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      LOADER: Sources/Hyprism.MachOLoader
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25 (trust store for the server's Java)
+        id: jdk25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up JDK 21 (Android build)
+        id: jdk21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install the .NET Android workload
+        run: dotnet workload install android
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.LOADER }}/pwrapply/go.mod
+          cache-dependency-path: ${{ env.LOADER }}/pwrapply/go.sum
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libarchive-tools zip
+          rustup target add aarch64-linux-android
+          command -v cargo-ndk || cargo install cargo-ndk --locked
+
+      - name: Set up the Android SDK and NDK
+        id: sdk
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" > /dev/null
+          ndk="${ANDROID_NDK_LATEST_HOME:-$(ls -d "$ANDROID_HOME/ndk/"* | sort -V | tail -1)}"
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+          echo "ndk=$(basename "$ndk")" >> "$GITHUB_OUTPUT"
+          echo "Using NDK $ndk"
+
+      - name: Restore the native dependency cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.LOADER }}/deps
+            ${{ env.LOADER }}/build/sdl
+            ${{ env.LOADER }}/build/mobileglues
+            ${{ env.LOADER }}/build/openal
+            ${{ env.LOADER }}/server/deps
+            ${{ env.LOADER }}/server/build
+          key: natives-${{ steps.sdk.outputs.ndk }}-${{ hashFiles('Sources/Hyprism.MachOLoader/deps.sh', 'Sources/Hyprism.MachOLoader/patches/**', 'Sources/Hyprism.MachOLoader/server/build-natives.sh', 'Sources/Hyprism.MachOLoader/server/patches/**') }}
+
+      - name: Install the signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$HOME/.android/debug.keystore"
+          else
+            echo "::warning::ANDROID_KEYSTORE_B64 is not set: this APK is signed with a throwaway key and cannot update an installed copy."
+            keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Build SDL, MobileGlues, OpenAL and the loader
+        working-directory: ${{ env.LOADER }}
+        run: ./deps.sh && ./build.sh
+
+      - name: Build the world server natives
+        working-directory: ${{ env.LOADER }}
+        run: server/build-natives.sh
+
+      - name: Assemble the world server's Java runtime
+        working-directory: ${{ env.LOADER }}
+        run: server/fetch-jdk.sh "${{ steps.jdk25.outputs.path }}"
+
+      - name: Assemble the game bundle
+        working-directory: ${{ env.LOADER }}
+        env:
+          JAVA_HOME: ${{ steps.jdk21.outputs.path }}
+        run: android/build-bundle.sh
+
+      - name: Build the APK
+        run: |
+          dotnet publish Sources/Hyprism.Android/Hyprism.Android.csproj -c Release \
+            -p:AndroidSdkDirectory="$ANDROID_HOME" \
+            -p:JavaSdkDirectory="${{ steps.jdk21.outputs.path }}" \
+            -p:ApplicationVersion=$((1000 + ${{ github.run_number }})) \
+            -p:ApplicationDisplayVersion=1.0.${{ github.run_number }}-andy
+          apk=$(find Sources/Hyprism.Android/bin/Release -name '*-Signed.apk' | head -1)
+          [ -n "$apk" ] || { echo "::error::no signed APK was produced"; exit 1; }
+          mkdir -p dist
+          cp "$apk" "dist/HytaleMobile-1.0.${{ github.run_number }}-andy.apk"
+          ls -la dist
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: HytaleMobile-apk
+          path: dist/*.apk
+
+      - name: Publish the android-latest prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete android-latest --cleanup-tag --yes || true
+          gh release create android-latest dist/*.apk --prerelease --target "$GITHUB_SHA" \
+            --title "Android build ${{ github.run_number }} (${GITHUB_REF_NAME})" \
+            --notes "Built from ${GITHUB_SHA::7} on ${GITHUB_REF_NAME}. Install the APK on the phone; it updates the installed app when it is signed with the same key."
