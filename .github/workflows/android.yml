@@ -86,7 +86,11 @@ jobs:
           sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$sdkmanager" --licenses > /dev/null || true
           "$sdkmanager" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" > /dev/null
-          ndk="${ANDROID_NDK_LATEST_HOME:-$(ls -d "$ANDROID_HOME/ndk/"* | sort -V | tail -1)}"
+          # NDK 30 rejects the unversioned target triple bindgen passes for BoringSSL (quiche's
+          # boring-sys), so use the newest installed NDK before it.
+          ls "$ANDROID_HOME/ndk/" | tee -a "$RUNNER_TEMP/build.log"
+          ndk=$(ls -d "$ANDROID_HOME/ndk/"* | sort -V | awk -F/ '{ split($NF, v, "."); if (v[1] < 30) last = $0 } END { print last }')
+          [ -n "$ndk" ] || { "$sdkmanager" "ndk;28.2.13676358" > /dev/null; ndk="$ANDROID_HOME/ndk/28.2.13676358"; }
           echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
           echo "ndk=$(basename "$ndk")" >> "$GITHUB_OUTPUT"
           echo "Using NDK $ndk" | tee -a "$RUNNER_TEMP/build.log"
