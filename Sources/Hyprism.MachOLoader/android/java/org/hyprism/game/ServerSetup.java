@@ -105,7 +105,7 @@ final class ServerSetup {
         String stamp = apkStamp();
         if (new File(files, "jdk/bin/java").isFile() && stamp.equals(readText(stampFile)))
             return;
-        progress.report("Instalando o Java do servidor…");
+        progress.report("Installing the world server's Java…");
         long start = System.currentTimeMillis();
         deleteTree(new File(files, "jdk"));
         deleteTree(new File(files, "natives"));
@@ -130,7 +130,7 @@ final class ServerSetup {
                 if (name.startsWith("jdk/bin/") || name.equals("jdk/lib/jspawnhelper") || name.equals("jdk/lib/jexec"))
                     out.setExecutable(true, true);
                 if (++count % 200 == 0)
-                    progress.report("Instalando o Java do servidor… " + count + " arquivos");
+                    progress.report("Installing the world server's Java… " + count + " files");
             }
         }
         new File(home, "tmp").mkdirs();
@@ -169,7 +169,7 @@ final class ServerSetup {
         String stamp = original.getPath() + " " + original.length() + " " + original.lastModified() + " " + apkStamp();
         if (patched.isFile() && stamp.equals(readText(stampFile)))
             return;
-        progress.report("Adaptando o servidor do jogo para Android…");
+        progress.report("Adapting the world server for Android…");
         long start = System.currentTimeMillis();
         patched.getParentFile().mkdirs();
         File tmp = new File(patched.getPath() + ".tmp");

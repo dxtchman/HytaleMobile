@@ -33,7 +33,7 @@ public class RestartActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         TextView text = new TextView(this);
-        text.setText("Reiniciando o jogo…\nSalvando o mundo.");
+        text.setText("Restarting the game…\nSaving the world.");
         text.setTextColor(Color.rgb(220, 224, 232));
         text.setTextSize(18);
         text.setGravity(Gravity.CENTER);

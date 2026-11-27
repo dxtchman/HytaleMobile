@@ -59,6 +59,12 @@ adb shell "chmod -R a+rwX $F/Client $F/UserData; chmod a+rw $F/Assets.zip"
 
 Files pushed by `adb` belong to the shell user, so the permission change lets the host app read them. Do not redistribute the client files.
 
+## Continuous build {/* #continuous-build */}
+
+The `Android APK` workflow in [`.github/workflows/android.yml`](../../../../.github/workflows/android.yml) runs every step above on an Ubuntu runner and produces the single APK. It runs on pushes that change the Android, loader, Core, or Desktop sources, and from the Actions tab. Each run uploads the APK as an artifact and replaces the `android-latest` prerelease, which a phone can download directly.
+
+The workflow signs the APK with the keystore in the `ANDROID_KEYSTORE_B64` repository secret, encoded with base64. The keystore must use the alias `androiddebugkey` and the password `android`, which the project file and `build-apk.sh` expect. Android only installs an update signed with the same key as the installed app, so keep one keystore for every build. Without the secret, the workflow signs with a throwaway key and logs a warning.
+
 ## Running {/* #running */}
 
 Sign in with an official account in the launcher, select the instance, and press **Launch**. To start the host without the launcher, use `adb shell am start -n org.hyprism.game/.HytaleActivity`; the client then stops at its authentication check.
@@ -81,6 +87,9 @@ Useful environment entries:
 | `HYPRISM_UI_SCALE` | Reports SDL window and mouse coordinates in points at this density; 1 (off) by default, because the game interface scales with the viewport height |
 | `HYPRISM_GL_TRACE=1` | Logs under `[gl]` the GL functions the client resolves, the first texture uploads and framebuffer changes, draws into small offscreen viewports, and GL errors |
 | `DOTNET_gcConcurrent=0` | Disables the background GC |
+| `HYPRISM_REFRESH` | Display refresh rate in Hz, over the **Refresh rate** option of the in-game panel; `0` leaves the rate to the system |
+| `HYPRISM_SERVER_HEAP` | Heap ceiling of the local world server. The host sets `3072M` on phones with 10 GB of memory or more and `2048M` from 7 GB; below that the server launcher uses `1536M` |
+| `HYPRISM_SERVER_OPTS` | Extra JVM options for the local world server. The host sets a larger `ReservedCodeCacheSize` on the same phones, so large mod sets keep being compiled |
 
 NativeAOT reads `DOTNET_` values as hexadecimal without a `0x` prefix and silently ignores values it cannot parse.
 
